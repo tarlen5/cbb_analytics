@@ -7,7 +7,7 @@ College Basketball analytics software for analyzing trends in 5 man units and ro
 
 * Stage 2: Process games by loading into a DataFrame and using machine learning algorithms to search for trends in 5 man units and other roster moves.
 
-Requirements
+### Requirements
 
 Installing this package requires the following 
 
