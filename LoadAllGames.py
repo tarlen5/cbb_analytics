@@ -19,13 +19,13 @@
 #   6) Order date first in name...
 #
 
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import re
 import os
 import sys
-from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 from urllib2 import urlopen
-from BeautifulSoup import BeautifulSoup
+from bs4 import BeautifulSoup
 import sqlite3
 import pandas as pd
 from pandas import DataFrame, Series
@@ -135,7 +135,7 @@ def getDate(box_score):
     for line in box_score:
         if bool(date_expr.match(line)):
             mm,dd,yy = line.split()[0].split('/')
-            date_text = '20'+yy+'-'+mm+'-'+dd
+            date_text = '20'+yy+'_'+mm+'_'+dd
             return date_text
 
     return None
@@ -187,22 +187,24 @@ def parseEvent(event):
 
 
 def cleanName(table_name):
-    """Quick function that drops non-alphanumeric characters, and
-    whitespace, keeping only [A-Z], [a-z], and [0-9] and also '_'
+    """
+    Quick function that drops non-alphanumeric characters, and
+    whitespace, keeping only [A-Z], [a-z], [0-9], also '_' and '-'
 
     IMPORTANT: Run this on db names to prevent SQL injection!
     """
-    return ''.join( chr for chr in table_name if (chr.isalnum() or chr == '_') )
+    return ''.join( chr for chr in table_name if (chr.isalnum() or chr == '_'
+                                                  or chr == '-') )
 
 
-def saveRoster(roster,teamname,dbfile):
+def saveRoster(roster, teamname, dbfile, game_date):
     """Saves roster of teamname to sqlite database dbfile"""
     conn = sqlite3.connect(dbfile)
     cur = conn.cursor()
 
     # Create the new SQLite table for roster:
-    # REDO THIS USING ''' ''':
-    tablename = cleanName(teamname+'_roster')
+    # REDO THIS USING ''' '''?
+    tablename = cleanName(teamname+'_roster_'+game_date)
 
     try:
         # First, drop table if it exists already
@@ -214,10 +216,14 @@ def saveRoster(roster,teamname,dbfile):
     logging.info("Creating table: %s"%tablename)
     create_table_query = 'CREATE TABLE '+tablename+'(Name TEXT, Jersey INT, Starter INT)'
     cur.execute(create_table_query)
+
     for player in roster:
         cur.execute('INSERT INTO '+tablename +
                     '''(Name, Jersey, Starter) VALUES(?,?,?)''',
                     (player['name'],player['jersey'],int(player['starter'])))
+
+    # Unless you use 'with', need to commit your changes to db manually.
+    conn.commit()
 
     loglevel = logging.root.getEffectiveLevel()
     if loglevel <= logging.INFO:
@@ -231,36 +237,41 @@ def saveRoster(roster,teamname,dbfile):
     return
 
 
-def savePlayByPlay(frame,dbfile):
+def savePlayByPlay(frame, dbfile, game_date):
     """Saves DataFrame, frame,  to sqlite database dbfile"""
+
     conn = sqlite3.connect(dbfile)
 
-    tablename = cleanName('PlayByPlay')
+    tablename = cleanName('PlayByPlay_'+game_date)
     logging.info('Creating table: %s'%tablename)
     df.to_sql(tablename,conn,flavor='sqlite',if_exists='replace')
 
-    loglevel = logging.root.getEffectiveLevel()
-    if loglevel <= logging.DEBUG:
-        cur = conn.cursor()
-        cur.execute('SELECT * from '+tablename+' limit 50')
-        data = cur.fetchall()
-        #print tabulate(data,headers=['Clock','Home Evt','Away Evt'],tablefmt="grid")
+    #loglevel = logging.root.getEffectiveLevel()
+    #if loglevel <= logging.DEBUG:
+    #    cur = conn.cursor()
+    #    cur.execute('SELECT * from '+tablename+' limit 50')
+    #    data = cur.fetchall()
+    #    print tabulate(data,headers=['Clock','Home Evt','Away Evt'],tablefmt="grid")
 
     conn.close()
 
     return
 
-parser = ArgumentParser('''Collects Box score and play by play information from a base site\n
-and puts them into a database.''',formatter_class=ArgumentDefaultsHelpFormatter)
-parser.add_argument('--db_dir',metavar='DIR',type=str,default='UCLA_2014_2015_db',
-                    help='Database directory')
+parser = ArgumentParser(
+    '''Collects Box score and play by play information from a base
+    site and puts them into a database.''',
+    formatter_class=ArgumentDefaultsHelpFormatter)
+parser.add_argument('filename',metavar='STR',type=str, default='UCLA_2014_2015.db',
+                    help='''Output filename for the database.''')
+#parser.add_argument('--db_dir',metavar='DIR',type=str,default='UCLA_2014_2015',
+#                    help='Database directory')
 parser.add_argument('-v', '--verbose', action='count', default=None,
                     help='set verbosity level')
 args = parser.parse_args()
 
 set_verbosity(args.verbose)
 
-BASE_URL = "http://www.uclabruins.com/SportSelect.dbml?&&DB_OEM_ID=30500&SPID=126928&SPSID=749889"
+BASE_URL = "http://www.uclabruins.com/SportSelect.dbml?SPSID=749889&SPID=126928&DB_OEM_ID=30500&Q_SEASON=2014"
 logging.warn("Looking up game information from: %s"%BASE_URL)
 
 # This finds the right links to the official box score:
@@ -271,7 +282,11 @@ urls = [lnk.get('href') for lnk in game_links]
 # Stage 1:
 #   For each url (link to box score and play by play):
 #     1) Load roster, box_score, and all play-by-play events
-#     2) Save each as a table to an sqlite db file
+#     2) Save each as a table to the season's sqlite3 db file
+
+
+# Initialize database for saving all info:
+dbfile = args.filename
 
 processed = 0
 unprocessed = 0
@@ -306,11 +321,11 @@ for i,url in enumerate(urls):
                        columns=['Clock','Home Evt','Away Evt'])
 
         # Saving all info to database
-        dbfile = os.path.join(args.db_dir,game_date+'_'+home_team+'_vs_'+away_team+'.db')
-        logging.info('Creating database: %s',dbfile)
-        saveRoster(home_roster,home_team,dbfile)
-        saveRoster(away_roster,away_team,dbfile)
-        savePlayByPlay(df,dbfile)
+        #dbfile= os.path.join(args.db_dir,game_date+'_'+home_team+'_vs_'+away_team+'.db')
+        logging.info('Using database: %s',dbfile)
+        saveRoster(home_roster,home_team,dbfile,game_date)
+        saveRoster(away_roster,away_team,dbfile,game_date)
+        savePlayByPlay(df,dbfile,game_date)
         processed += 1
 
     except IndexError, e:
