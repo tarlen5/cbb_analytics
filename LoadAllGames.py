@@ -1,23 +1,14 @@
 #! /usr/bin/env python
 #
-# LoadAllGames.py
+# LoadAllGames.py See doctring in ArgumentParser for help and
+# description. View as: ./LoadAllGames -h
 #
 # author: Timothy C. Arlen
 #         timothyarlen@gmail.com
 #
 # date:   24 March 2015
 #
-#
-# 16 - April 2015 TO DO:
-#   1) Do we want columns for FirstName, LastName? - Not sure
-#      because play-by-play always gives full name...
-#   2) Put in print tabulate statements for debug mode -- DONE
-#   3) Break off ending diagnostics to new file: processGames.py -- DONE
-#   4) Consistency for var_names, FunctionNames()!!! -- DONE
-#   Naming conventions: ClassName, ModuleName, funcName, var_name, CONSTANT
-#   5) Put date in db file, since mutiple gms against same team! -- DONE
-#   6) Order date first in name...
-#
+
 
 from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 import re
@@ -38,14 +29,14 @@ clock_expr = re.compile("(20:00|[0-1][0-9]:[0-5][0-9])")
 date_expr = re.compile("([0-1][0-9]/[0-3][0-9]/[0-1][0-9])")
 
 def getAllStats(text):
-    """Expects 'text' to be a list of lines of html. Searches over each
+    """
+    Expects 'text' to be a list of lines of html. Searches over each
     line and finds portion of 'text' that contains the information
     needed to process the box score and play-by-play
 
     If relevant text matches are not found, then throws exception.
     If everthing handled correctly, then returns the string subset
     for all stats, box score and play-by-play
-
     """
 
     start_index = None; end_index = None; mid_index = None
@@ -53,10 +44,7 @@ def getAllStats(text):
     mid_text = 'Play-by-Play\r'
     end_text = '2nd period-only' # Break on final score instead???
     for i,line in enumerate(text):
-        if start_text in line:
-            start_index = i
-            #print text[i:i+10]
-
+        if start_text in line: start_index = i
         if mid_text in line: mid_index = i
         if end_text in line: end_index = i
 
@@ -78,18 +66,20 @@ def getAllStats(text):
 
 
 def getRosters(box_score):
-    """Parses the box_score-a list of strings-for the away team and
+    """
+    Parses the box_score-a list of strings-for the away team and
     roster, and the home team and roster
 
     Assumes: first 5 listings for VISITORS and HOME TEAM are the
     starters
-
     """
 
     home_team_name = ""
     away_team_name = ""
     home = []; away = []
-    is_home = None  #Flag for putting roster slot into Home or Away
+
+    #Flag for putting roster slot into Home or Away
+    is_home = None
     for line in box_score:
         if 'VISITORS:' in line:
             line = line.split(',')[0]
@@ -98,7 +88,6 @@ def getRosters(box_score):
         if 'HOME TEAM:' in line:
             line = line.split(',')[0]
             home_team_name = '_'.join(line.split()[2:-1])
-            #home_team_name = clean_name(home_team_name)
             is_home = True
 
         line_split = line.split(' ')
@@ -197,13 +186,12 @@ def cleanName(table_name):
                                                   or chr == '-') )
 
 
-def saveRoster(roster, teamname, dbfile, game_date):
+def saveRoster(roster, teamname, game_date, dbfile):
     """Saves roster of teamname to sqlite database dbfile"""
     conn = sqlite3.connect(dbfile)
     cur = conn.cursor()
 
     # Create the new SQLite table for roster:
-    # REDO THIS USING ''' '''?
     tablename = cleanName(teamname+'_roster_'+game_date)
 
     try:
@@ -237,7 +225,7 @@ def saveRoster(roster, teamname, dbfile, game_date):
     return
 
 
-def savePlayByPlay(frame, dbfile, game_date):
+def savePlayByPlay(frame, game_date, dbfile):
     """Saves DataFrame, frame,  to sqlite database dbfile"""
 
     conn = sqlite3.connect(dbfile)
@@ -259,12 +247,10 @@ def savePlayByPlay(frame, dbfile, game_date):
 
 parser = ArgumentParser(
     '''Collects Box score and play by play information from a base
-    site and puts them into a database.''',
+    url and stores them into a database for later processing.''',
     formatter_class=ArgumentDefaultsHelpFormatter)
-parser.add_argument('filename',metavar='STR',type=str, default='UCLA_2014_2015.db',
+parser.add_argument('dbfilename',metavar='STR',type=str,
                     help='''Output filename for the database.''')
-#parser.add_argument('--db_dir',metavar='DIR',type=str,default='UCLA_2014_2015',
-#                    help='Database directory')
 parser.add_argument('-v', '--verbose', action='count', default=None,
                     help='set verbosity level')
 args = parser.parse_args()
@@ -282,11 +268,7 @@ urls = [lnk.get('href') for lnk in game_links]
 # Stage 1:
 #   For each url (link to box score and play by play):
 #     1) Load roster, box_score, and all play-by-play events
-#     2) Save each as a table to the season's sqlite3 db file
-
-
-# Initialize database for saving all info:
-dbfile = args.filename
+#     2) Save each as a table to the season's dbfile
 
 processed = 0
 unprocessed = 0
@@ -321,11 +303,10 @@ for i,url in enumerate(urls):
                        columns=['Clock','Home Evt','Away Evt'])
 
         # Saving all info to database
-        #dbfile= os.path.join(args.db_dir,game_date+'_'+home_team+'_vs_'+away_team+'.db')
-        logging.info('Using database: %s',dbfile)
-        saveRoster(home_roster,home_team,dbfile,game_date)
-        saveRoster(away_roster,away_team,dbfile,game_date)
-        savePlayByPlay(df,dbfile,game_date)
+        logging.info("Using database: %s"%args.dbfilename)
+        saveRoster(home_roster, home_team, game_date, args.dbfilename)
+        saveRoster(away_roster, away_team, game_date, args.dbfilename)
+        savePlayByPlay(df, game_date, args.dbfilename)
         processed += 1
 
     except IndexError, e:
